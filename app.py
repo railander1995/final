@@ -1,110 +1,121 @@
 
 import streamlit as st
-import os
 import requests
+import base64
+import tempfile
+import os
 
-st.set_page_config(page_title="📑 Consulta de Certidões", layout="wide")
+st.set_page_config(page_title="🔍 Consulta CNPJ e SINTEGRA AP", layout="centered")
 
 st.markdown("""
-<style>
-    .main {
-        background-color: #f5f7fa;
-    }
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    .certidao-card {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        margin-bottom: 20px;
-    }
-    .certidao-title {
-        font-size: 18px;
-        font-weight: bold;
-    }
-    .pdf-link {
-        color: #4A90E2;
-        font-weight: bold;
-    }
-</style>
+    <style>
+        body {
+            background-color: #f0f8ff;
+            color: #003366;
+        }
+        .stButton>button {
+            background-color: #0056b3;
+            color: white;
+            font-weight: bold;
+            border-radius: 6px;
+            padding: 10px;
+        }
+        .stTextInput>div>input {
+            background-color: #ffffff;
+            border: 1px solid #cce;
+            border-radius: 6px;
+            padding: 10px;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 Emissor Inteligente de Certidões Negativas")
-st.caption("Sistema automatizado via Infosimples API")
+st.title("📱 Consulta CNPJ & SINTEGRA AP")
+st.caption("Aplicativo inspirado em visual mobile com integração via API Infosimples")
 
-col1, col2 = st.columns([1, 2])
-with col1:
-    cnpj = st.text_input("Digite o CNPJ da empresa:", value="15347020000100", max_chars=18)
-    ie = st.text_input("Inscrição Estadual (opcional p/ SINTEGRA):", value="")
-
-with col2:
-    token = os.getenv("infosimples_token")
-    if not token:
-        token = st.text_input("Token Infosimples:", type="password")
-
-st.markdown("---")
-
-servicos = {
-    "Receita Federal (PGFN)": "receita-federal/pgfn",
-    "SEFAZ Amapá": "sefaz/ap/certidao-debitos",
-    "FGTS / Caixa": "caixa/regularidade",
-    "CNDT / Justiça do Trabalho": "tribunal/tst/cndt",
-    "Comprovante de Inscrição CNPJ": "receita-federal/cnpj",
-    "SINTEGRA Amapá": "sintegra/ap"
-}
+cnpj = st.text_input("Digite o CNPJ (somente números)", max_chars=14)
+ie = st.text_input("Inscrição Estadual (opcional - para SINTEGRA)")
+token = st.text_input("🔑 Token Infosimples", type="password")
 
 base_url = "https://api.infosimples.com/api/v2/consultas"
 
-@st.cache_data(show_spinner=False)
-def consultar(certidao, rota, parametros):
-    try:
-        response = requests.get(f"{base_url}/{rota}", params=parametros)
-        if 'application/json' in response.headers.get("Content-Type", ""):
-            data = response.json().get("data", [{}])[0]
-            return extrair_link_pdf(data)
-        return None
-    except Exception:
-        return None
-
-def extrair_link_pdf(data_item):
-    if isinstance(data_item, str) and data_item.startswith("http"):
-        return data_item
-    if isinstance(data_item, dict):
-        for v in data_item.values():
-            if isinstance(v, str) and v.startswith("http"):
-                return v
-            elif isinstance(v, dict):
-                res = extrair_link_pdf(v)
-                if res:
-                    return res
+def extrair_link_pdf(dados_json):
+    if isinstance(dados_json, str) and dados_json.endswith(".pdf") and dados_json.startswith("http"):
+        return dados_json
+    if isinstance(dados_json, dict):
+        for key, val in dados_json.items():
+            link = extrair_link_pdf(val)
+            if link:
+                return link
+    if isinstance(dados_json, list):
+        for item in dados_json:
+            link = extrair_link_pdf(item)
+            if link:
+                return link
     return None
 
-if st.button("🚀 Emitir Certidões Automáticas"):
-    if not token or not cnpj:
+def baixar_pdf(link, nome_arquivo):
+    r_pdf = requests.get(link)
+    if r_pdf.status_code == 200:
+        path = os.path.join(tempfile.gettempdir(), nome_arquivo)
+        with open(path, "wb") as f:
+            f.write(r_pdf.content)
+        return path
+    return None
+
+if st.button("🔎 Consultar Agora"):
+    if not cnpj or not token:
         st.warning("Informe o CNPJ e o token para continuar.")
     else:
-        st.markdown("### 📋 Resultados das Consultas")
+        parametros = {
+            "cnpj": cnpj,
+            "token": token,
+            "timeout": 600,
+            "ignore_site_receipt": 0
+        }
 
-        for nome, rota in servicos.items():
-            parametros = {
-                "cnpj": cnpj,
-                "token": token,
-                "timeout": 600,
-                "ignore_site_receipt": 0,
-                "preferencia_emissao": "2via"
-            }
-            if "sintegra" in rota and ie:
-                parametros["ie"] = ie
-
-            with st.container():
-                st.markdown("<div class='certidao-card'>", unsafe_allow_html=True)
-                st.markdown(f"<div class='certidao-title'>{nome}</div>", unsafe_allow_html=True)
-                pdf_link = consultar(nome, rota, parametros)
-                if pdf_link:
-                    st.markdown(f"<a class='pdf-link' href='{pdf_link}' target='_blank'>📄 Clique aqui para baixar</a>", unsafe_allow_html=True)
+        st.subheader("📑 Comprovante de Inscrição no CNPJ")
+        try:
+            r = requests.get(f"{base_url}/receita-federal/cnpj", params=parametros)
+            if r.status_code == 200:
+                dados = r.json().get("data", [{}])[0]
+                for k, v in dados.items():
+                    st.write(f"**{k.replace('_', ' ').title()}**: {v}")
+                link_pdf = extrair_link_pdf(dados)
+                if not link_pdf:
+                    link_pdf = extrair_link_pdf(r.json().get("site_receipts", []))
+                if link_pdf:
+                    path = baixar_pdf(link_pdf, "comprovante_cnpj.pdf")
+                    if path:
+                        with open(path, "rb") as f:
+                            st.download_button("📥 Baixar PDF do CNPJ", f, file_name="comprovante_cnpj.pdf")
                 else:
-                    st.warning("PDF não disponível ou certidão negativa não emitida.")
-                st.markdown("</div>", unsafe_allow_html=True)
+                    st.warning("⚠️ Nenhum PDF encontrado.")
+            else:
+                st.error(f"Erro na requisição: {r.status_code}")
+        except Exception as e:
+            st.error(f"Erro: {e}")
+
+        st.subheader("🧾 Consulta SINTEGRA Amapá")
+        try:
+            parametros_sintegra = parametros.copy()
+            if ie:
+                parametros_sintegra["ie"] = ie
+            r2 = requests.get(f"{base_url}/sintegra/ap", params=parametros_sintegra)
+            if r2.status_code == 200:
+                dados2 = r2.json().get("data", [{}])[0]
+                for k, v in dados2.items():
+                    st.write(f"**{k.replace('_', ' ').title()}**: {v}")
+                link_pdf2 = extrair_link_pdf(dados2)
+                if not link_pdf2:
+                    link_pdf2 = extrair_link_pdf(r2.json().get("site_receipts", []))
+                if link_pdf2:
+                    path2 = baixar_pdf(link_pdf2, "sintegra_ap.pdf")
+                    if path2:
+                        with open(path2, "rb") as f:
+                            st.download_button("📥 Baixar PDF SINTEGRA AP", f, file_name="sintegra_ap.pdf")
+                else:
+                    st.warning("⚠️ Nenhum PDF encontrado.")
+            else:
+                st.error(f"Erro na requisição: {r2.status_code}")
+        except Exception as e:
+            st.error(f"Erro: {e}")
