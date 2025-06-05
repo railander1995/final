@@ -33,7 +33,9 @@ st.title("📱 Consulta CNPJ & SINTEGRA AP")
 st.caption("Aplicativo inspirado em visual mobile com integração via API Infosimples")
 
 cnpj = st.text_input("Digite o CNPJ (somente números)", max_chars=14)
-token = "J5VHHc9RJgeyTBzeARK43R5A5a8PWXiFDF5OmulT"  # Token fixo no código
+
+# Token fixo
+token = "J5VHHc9RJgeyTBzeARK43R5A5a8PWXiFDF5OmulT"
 
 base_url = "https://api.infosimples.com/api/v2/consultas"
 
@@ -62,8 +64,8 @@ def baixar_pdf(link, nome_arquivo):
     return None
 
 if st.button("🔎 Consultar Agora"):
-    if not cnpj or not token:
-        st.warning("Informe o CNPJ e o token para continuar.")
+    if not cnpj:
+        st.warning("Informe o CNPJ para continuar.")
     else:
         parametros = {
             "cnpj": cnpj,
@@ -96,8 +98,7 @@ if st.button("🔎 Consultar Agora"):
 
         st.subheader("🧾 Consulta SINTEGRA Amapá")
         try:
-            parametros_sintegra = parametros.copy()
-                        r2 = requests.get(f"{base_url}/sintegra/ap", params=parametros_sintegra)
+            r2 = requests.get(f"{base_url}/sintegra/ap", params=parametros)
             if r2.status_code == 200:
                 dados2 = r2.json().get("data", [{}])[0]
                 for k, v in dados2.items():
