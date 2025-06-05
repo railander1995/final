@@ -1,89 +1,41 @@
 
 import streamlit as st
 import requests
-import tempfile
-import os
+from pathlib import Path
 
-st.set_page_config(page_title="📄 Emissão de Certidões CNPJ + SINTEGRA", layout="centered")
+st.set_page_config(page_title="Consulta CNPJ & SINTEGRA AP", layout="centered")
 
-st.title("📎 Gerador de Certidões")
-st.caption("Emitir diretamente os arquivos PDF — sem exibir os dados.")
+st.title("📱 Consulta CNPJ & SINTEGRA AP")
+st.caption("Aplicativo inspirado em visual mobile com integração via API Infosimples")
 
-cnpj = st.text_input("Digite o CNPJ da empresa:", max_chars=18, value="15347020000100")
+cnpj = st.text_input("Digite o CNPJ (somente números)", max_chars=14)
 
-# Token fixo
-token = "J5VHHc9RJgeyTBzeARK43R5A5a8PWXiFDF5OmulT"
-base_url = "https://api.infosimples.com/api/v2/consultas"
+if cnpj:
+    api_token = "J5VHHc9RJgeyTBzeARK43R5A5a8PWXiFDF5OmulT"
+    headers = {"Content-Type": "application/json"}
 
-def extrair_link_pdf(dados_json):
-    if isinstance(dados_json, str) and dados_json.endswith(".pdf") and dados_json.startswith("http"):
-        return dados_json
-    if isinstance(dados_json, dict):
-        # Caso especial: campo único 'site_receipt'
-        if "site_receipt" in dados_json and isinstance(dados_json["site_receipt"], str):
-            if dados_json["site_receipt"].endswith(".pdf"):
-                return dados_json["site_receipt"]
-        for val in dados_json.values():
-            link = extrair_link_pdf(val)
-            if link:
-                return link
-    if isinstance(dados_json, list):
-        for item in dados_json:
-            link = extrair_link_pdf(item)
-            if link:
-                return link
-    return None
+    # Consulta Receita Federal (CNPJ)
+    url_cnpj = f"https://api.infosimples.com/api/v2/consultas/receita-federal/cnpj?token={api_token}&timeout=600&ignore_site_receipt=0&cnpj={cnpj}"
+    r_cnpj = requests.get(url_cnpj, headers=headers)
+    data_cnpj = r_cnpj.json()
 
-def baixar_pdf(link, nome_arquivo):
-    r_pdf = requests.get(link)
-    if r_pdf.status_code == 200:
-        path = os.path.join(tempfile.gettempdir(), nome_arquivo)
-        with open(path, "wb") as f:
-            f.write(r_pdf.content)
-        return path
-    return None
+    if "site_receipts" in data_cnpj and data_cnpj["site_receipts"]:
+        pdf_url = data_cnpj["site_receipts"][0]
+        pdf_path = Path(f"./pdfs/comprovante_cnpj_{cnpj}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(requests.get(pdf_url).content)
+        st.success("📄 Comprovante de Inscrição no CNPJ disponível:")
+        st.download_button("📥 Baixar Comprovante CNPJ", data=open(pdf_path, "rb"), file_name=pdf_path.name)
 
-if st.button("📤 Emitir Certidões"):
-    if not cnpj:
-        st.warning("⚠️ Digite um CNPJ válido.")
-    else:
-        parametros = {
-            "cnpj": cnpj,
-            "token": token,
-            "timeout": 600,
-            "ignore_site_receipt": 0
-        }
+    # Consulta SINTEGRA AP
+    url_sintegra = f"https://api.infosimples.com/api/v2/consultas/sintegra/ap?token={api_token}&timeout=600&ignore_site_receipt=0&cnpj={cnpj}"
+    r_sintegra = requests.get(url_sintegra, headers=headers)
+    data_sintegra = r_sintegra.json()
 
-        # CNPJ
-        st.subheader("📑 Comprovante CNPJ")
-        try:
-            r = requests.get(f"{base_url}/receita-federal/cnpj", params=parametros)
-            if r.status_code == 200:
-                dados = r.json()
-                link = extrair_link_pdf(dados)
-                if link:
-                    path = baixar_pdf(link, "comprovante_cnpj.pdf")
-                    if path:
-                        with open(path, "rb") as f:
-                            st.download_button("⬇️ Baixar PDF CNPJ", f, file_name="comprovante_cnpj.pdf")
-                else:
-                    st.info("❌ PDF não encontrado para CNPJ.")
-        except Exception as e:
-            st.error(f"Erro: {e}")
-
-        # SINTEGRA AP
-        st.subheader("🧾 SINTEGRA Amapá")
-        try:
-            r2 = requests.get(f"{base_url}/sintegra/ap", params=parametros)
-            if r2.status_code == 200:
-                dados2 = r2.json()
-                link2 = extrair_link_pdf(dados2)
-                if link2:
-                    path2 = baixar_pdf(link2, "sintegra_ap.pdf")
-                    if path2:
-                        with open(path2, "rb") as f:
-                            st.download_button("⬇️ Baixar PDF SINTEGRA", f, file_name="sintegra_ap.pdf")
-                else:
-                    st.info("❌ PDF não encontrado para SINTEGRA.")
-        except Exception as e:
-            st.error(f"Erro: {e}")
+    if "site_receipts" in data_sintegra and data_sintegra["site_receipts"]:
+        pdf_url = data_sintegra["site_receipts"][0]
+        pdf_path = Path(f"./pdfs/comprovante_sintegra_ap_{cnpj}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(requests.get(pdf_url).content)
+        st.success("📄 Comprovante SINTEGRA AP disponível:")
+        st.download_button("📥 Baixar Comprovante SINTEGRA", data=open(pdf_path, "rb"), file_name=pdf_path.name)
